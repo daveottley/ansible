@@ -1,0 +1,6 @@
+---
+ansible_become_pass: "{{ UBUNTU_COMMON_DEPLOY_PASS }}"
+dbserver_common_required_packages:
+  - postgresql
+  - postgresql-contrib
+...

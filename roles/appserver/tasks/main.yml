@@ -1,0 +1,5 @@
+---
+- name: Install common required Appserver packages
+  apt: 
+    name: "{{ appserver_common_required_packages }}"
+    state: present

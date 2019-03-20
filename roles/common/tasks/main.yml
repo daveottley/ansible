@@ -1,0 +1,267 @@
+---
+- name: Set Ansible SSH password
+  set_fact:
+    ansible_ssh_pass: "{{ UBUNTU_COMMON_ROOT_PASSWORD }}"
+  when: root_login_available.failed == false
+
+- name: Confirm host connection works
+  ping:
+
+- name: Change ssh port
+  lineinfile: 
+    path: /etc/ssh/sshd_config
+    regexp: '^Port\s'
+    line: Port {{ ubuntu_common_ssh_port }}
+    state: present
+  notify: Restart ssh 
+
+- name: Ensure SSH is reloaded if need be
+  meta: flush_handlers
+
+- name: Ensure we use the configured SSH port for the remainder of the role
+  set_fact:
+    ansible_port: "{{ ubuntu_common_ssh_port }}"
+
+- name: Run deferred setup to gather facts
+  setup:
+
+- name: Change root password
+  user:
+    name: root
+    group: root
+    password: "{{ item | password_hash('sha512') }}"
+    update_password: on_create
+    shell: /bin/bash
+  with_items:
+    - "{{ UBUNTU_COMMON_ROOT_PASSWORD }}"
+
+- name: Add group 'deployers'
+  group:
+    name: "{{ ubuntu_common_deploy_group_name }}"
+
+- name: Add user 'deployer'
+  user: 
+    name: "{{ ubuntu_common_deploy_user_name }}"
+    group: "{{ ubuntu_common_deploy_group_name }}"
+    password: "{{ item | password_hash('sha512') }}"
+    update_password: on_create
+    create_home: yes
+    shell: /bin/bash
+  with_items:
+    - "{{ UBUNTU_COMMON_DEPLOY_PASSWORD }}"
+
+- name: Add authorized keys for deploy user
+  authorized_key: 
+    user: "{{ ubuntu_common_deploy_user_name }}"
+    state: present
+    key: "{{ lookup('file', item.path) }}"
+  loop: "{{ hostvars['localhost']['ubuntu_common_deploy_public_keys']['files'] }}"
+
+- name: Add user 'deployer' to sudoers.d
+  copy:
+    dest: /etc/sudoers.d/{{ ubuntu_common_deploy_user_name }}
+    content: "{{ ubuntu_common_deploy_user_name }} ALL=(ALL) ALL"
+    owner: root
+    group: root
+    mode: 0440
+
+- name: Add group 'deployers' to sudoers.d
+  copy:
+    dest: /etc/sudoers.d/{{ ubuntu_common_deploy_group_name }}
+    content: "%{{ ubuntu_common_deploy_group_name }} ALL=(ALL) ALL"
+    owner: root
+    group: root
+    mode: 0440
+
+- name: Install aptitude
+  apt:
+    name: aptitude
+    state: present
+
+- name: Update APT package cache
+  apt: 
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Upgrade APT to the latest version
+  apt:
+    upgrade: safe
+    autoremove: yes
+  register: apt_upgrade
+
+- name: Install common required Ubuntu packages
+  apt: 
+    name: "{{ ubuntu_common_required_packages }}"
+    state: present
+
+- name: Install common optional Ubuntu packages
+  apt:
+    name: "{{ ubuntu_common_optional_packages }}"
+    state: present
+
+- name: Adjust APT upgrade intervals
+  copy:
+    src: ./roles/common/files/apt_periodic
+    dest: /etc/apt/apt.conf.d/10periodic
+
+- name: Setup ufw to deny all traffic
+  ufw: 
+    state: enabled
+    policy: deny
+    direction: incoming
+
+- name: Allow SSH traffic
+  ufw:
+    rule: allow
+    port: "{{ ubuntu_common_ssh_port }}"
+    proto: tcp
+
+- name: Allow mosh traffic
+  ufw:
+    rule: allow
+    port: "{{ ubuntu_common_mosh_from_port }}:{{ ubuntu_common_mosh_to_port }}"
+    proto: udp
+  when: "'mosh' in ubuntu_common_optional_packages"
+
+- name: Set up Postfix to relay mail
+  debconf: 
+    name: postfix
+    question: "{{ item.question }}"
+    value: "{{ item.value }}"
+    vtype: "{{ item.vtype }}"
+  with_items:
+    - question: 'postfix/mailname'
+      value: '{{ ansible_fqdn }}'
+      vtype: 'string'
+    - question: 'postfix/main_mailer_type'
+      value: 'Internet Site'
+      vtype: 'string'
+
+- name: Email log summary daily
+  lineinfile: 
+    path: /etc/cron.daily/00logwatch
+    regexp: "^/usr/sbin/logwatch"
+    line: "/usr/sbin/logwatch --output mail --mailto {{ UBUNTU_COMMON_LOGWATCH_EMAIL }} --detail high"
+    state: present
+    create: yes 
+
+- name: Check to see if pip is installed
+  command: pip --version
+  ignore_errors: yes
+  register: pip_present
+
+- name: Download pip from Pypa.io
+  get_url:
+    url: https://bootstrap.pypa.io/get-pip.py
+    dest: /home/{{ ubuntu_common_deploy_user_name }}/get-pip.py
+    mode: 0644
+  when: pip_present is defined and
+        pip_present['rc'] != 0
+
+- name: Install Pip with the current python (3.7)
+  command: python3.7 /home/{{ ubuntu_common_deploy_user_name }}/get-pip.py
+  when: pip_present is defined and
+        pip_present['rc'] != 0
+
+- name: Remove get-pip.py
+  file: 
+    path: /home/{{ ubuntu_common_deploy_user_name }}/get-pip.py
+    state: absent
+  
+- name: Update .bashrc file (custom prompt and $EDITOR)
+  blockinfile:
+    path: /home/{{ ubuntu_common_deploy_user_name }}/.bashrc
+    marker: "# {mark} ANSIBLE MANAGED BLOCK"
+    block: |
+      export EDITOR='nano'
+      function __return_value() {
+        RETVAL=$?
+        echo "$RETVAL"
+      }
+      export PS1="\u in \w\n(\`__return_value\`) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
+    owner: "{{ ubuntu_common_deploy_user_name }}"
+    group: "{{ ubuntu_common_deploy_group_name }}"
+    mode: 0644
+    state: present
+
+- name: Update .bash_aliases file (Python and pip aliases)
+  blockinfile:
+    path: /home/{{ ubuntu_common_deploy_user_name }}/.bash_aliases
+    marker: "# {mark} ANSIBLE MANAGED BLOCK"
+    block: |
+      alias python='python3.7'
+      alias pip='python3.7 -m pip'
+    owner: "{{ ubuntu_common_deploy_user_name }}"
+    group: "{{ ubuntu_common_deploy_group_name }}"
+    mode: 0644
+    state: present
+    create: yes
+
+- name: Update pip to the latest version
+  command: pip install pip --upgrade
+
+- name: Disallow password authentication
+  lineinfile: 
+    path: /etc/ssh/sshd_config
+    regexp: '^PasswordAuthentication'
+    line: PasswordAuthentication no
+    state: present
+  notify: Restart ssh
+
+- name: Disallow root SSH access
+  lineinfile: 
+    path: /etc/ssh/sshd_config
+    regexp: '^PermitRootLogin'
+    line: PermitRootLogin no
+    state: present
+  notify: Restart ssh
+
+- name: Set SSH login grace time
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^LoginGraceTime'
+    line: LoginGraceTime 30
+    state: present
+  notify: Restart ssh
+
+- name: Set SSH max login attempts
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^MaxAuthTries'
+    line: MaxAuthTries 3
+    state: present
+  notify: Restart ssh 
+
+- name: Set SSH protocol to '2'
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^Protocol'
+    line: Protocol 2
+    state: present
+  notify: Restart ssh 
+
+- name: Set SSH to use PAM
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^UsePAM'
+    line: UsePAM yes
+    state: present
+  notify: Restart ssh 
+
+- name: Restrict SSH access  to certain users with pam_access.so
+  lineinfile:
+    path: /etc/pam.d/sshd
+    regexp: 'pam_access.so'
+    line: account required pam_access.so
+    state: present
+  notify: Restart ssh
+
+- name: Disallow SSH access to all but deployer
+  blockinfile:
+    path: /etc/security/access.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK"
+    block: |
+      + : ALL : 192.168.1. 
+      + : deployer : ALL 
+      ‑ : ALL : ALL
+    state: present

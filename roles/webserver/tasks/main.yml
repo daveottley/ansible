@@ -1,0 +1,19 @@
+---
+- name: Install common required Webserver packages
+  apt:
+    name: "{{ webserver_common_required_packages }}"
+    state: present
+
+- name: Allow HTTPS traffic
+  ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+
+- name: Allow HTTP traffic
+  ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Create nginx.conf using template

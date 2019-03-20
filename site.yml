@@ -1,0 +1,157 @@
+---
+- hosts: localhost
+  name: Gather local information for syncronization
+  connection: local
+  tasks:
+    - name: Get list of authorized keys from control machine
+      find:
+        paths: /Users/daveottley/Dropbox/Personal/MTG_Engine/.keys
+      register: ubuntu_common_deploy_public_keys
+
+    - name: Remove host keys from known_hosts to avoid bad key error
+      lineinfile: 
+        path: ~/.ssh/known_hosts
+        regexp: '^\[?{{ item }}'
+        state: absent
+      with_items: "{{ groups['all'] }}"
+
+- hosts: all
+  name: Establish correct ssh port
+  gather_facts: no
+  tasks:
+    - name: Include common variables for SSH login configuration
+      include_vars: 
+        file: roles/common/vars/main.yml
+        
+    # From localhost, check if we're able to reach {{ inventory_hostname }} on
+    # port 22
+    - name: Check if we're using the default SSH port
+      become: no
+      wait_for:
+        port: 22
+        state: started
+        host: "{{ inventory_hostname }}"
+        connect_timeout: 5
+        timeout: 10
+      delegate_to: localhost
+      ignore_errors: yes
+      register: default_ssh
+
+    # If reachable, continue the following tasks with this port
+    - name: Set inventory ansible_port to default
+      become: no
+      set_fact:
+        ansible_port: 22
+      when: default_ssh is defined and
+            default_ssh.state is defined and
+            default_ssh.state == 'started'
+      register: ssh_port_set
+
+    - name: Check if we're using the inventory-provided SSH port
+      become: no
+      wait_for:
+        port: "{{ ansible_port }}"
+        state: started
+        host: "{{ inventory_hostname }}"
+        connect_timeout: 5
+        timeout: 10
+      delegate_to: localhost
+      ignore_errors: yes
+      register: configured_ssh
+      when: default_ssh is defined and
+            default_ssh.state is undefined
+
+    # If {{ ansible_port }} is reachable, we don't need to do anything special
+    - name: SSH port is configured properly
+      become: no
+      debug:
+        msg: SSH port is configured properly
+      when: configured_ssh is defined and
+            configured_ssh.state is defined and
+            configured_ssh.state == 'started'
+      register: ssh_port_set
+
+    # If the SSH port is neither the default or the configured, give up.
+    - name: Fail if SSH port was not auto-detected (unknown)
+      become: no
+      fail:
+        msg: The SSH port is neither 22 or {{ ansible_port }}.
+      when: ssh_port_set is undefined
+
+- hosts: all
+  name: Check if root login is permitted
+  gather_facts: no
+  ignore_unreachable: yes
+  ignore_errors: yes
+  tasks:
+    - name: Attempt SSH as root
+      command: sshpass -p {{ UBUNTU_COMMON_ROOT_PASSWORD }} ssh -tt -o StrictHostKeyChecking=no root@{{ inventory_hostname }} -p {{ ansible_port }} "pwd"
+      delegate_to: localhost
+      register: root_login_available
+
+- hosts: all
+  gather_facts: no
+  become: yes 
+  remote_user:  >-
+    {%- if root_login_available['failed'] == false -%}
+      root
+    {%- else -%}
+      {{ ubuntu_common_deploy_user_name }}
+    {%- endif -%}
+  tasks:
+  - debug:
+      msg: "Common pre-role work"
+  - import_role:
+      name: common
+  - debug:
+      msg: "Common post-role work"
+
+- hosts: webservers
+  become: yes
+  tasks:
+  - debug:
+      msg: "Webserver pre-role work"
+  - import_role:
+      name: webserver
+  - debug:
+      msg: "Webserver post-role work"
+
+- hosts: appservers
+  become: yes
+  tasks:
+  - debug:
+      msg: "Appserver pre-role work"
+  - import_role:
+      name: appserver
+  - debug:
+      msg: "Appserver post-role work"
+
+- hosts: dbservers
+  become: yes
+  tasks:
+  - debug:
+      msg: "Database server pre-role work"
+  - include_role:
+      name: dbserver
+  - debug:
+      msg: "Database server post-role work"
+
+- hosts: all
+  name: Reboot server if APT was changed 
+  become: yes
+  tasks:
+    - name: Reboot Server
+      command: shutdown -r now
+      ignore_unreachable: yes
+      when: apt_upgrade.changed
+    
+    - name: Wait for server to restart
+      become: no
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ ansible_port }}"
+        delay: 1
+        timeout: 300
+      delegate_to: localhost
+      when: apt_upgrade.changed
+... 

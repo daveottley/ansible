@@ -1,0 +1,7 @@
+---
+ansible_become_pass: "{{ UBUNTU_COMMON_DEPLOY_PASSWORD }}"
+appserver_common_required_packages:
+  - git
+  - postgresql-client
+  - libpq5
+...

@@ -1,0 +1,5 @@
+---
+- name: Install common required DB Server packages
+  apt: 
+    name: "{{ dbserver_common_required_packages }}"
+    state: present
