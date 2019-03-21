@@ -2,4 +2,9 @@
 ansible_become_pass: "{{ UBUNTU_COMMON_DEPLOY_PASSWORD }}"
 webserver_common_required_packages:
   - nginx
+  - python-certbot-nginx
+
+domain_name: test.daveottley.com
+ip_address: 45.79.10.134
+letsencrypt_email: webmaster@daveottley.com
 ...

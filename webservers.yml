@@ -1,0 +1,18 @@
+---
+- hosts: webservers
+  become: no
+  gather_facts: no
+  tasks:
+    - include_vars:
+        file: roles/common/vars/main.yml
+    - include_vars:
+        file: roles/webserver/vars/main.yml
+    - set_fact:
+        ansible_port: "{{ ubuntu_common_ssh_port }}"
+
+- hosts: webservers
+  become: yes
+  tasks:
+    - import_role:
+        name: webserver
+...

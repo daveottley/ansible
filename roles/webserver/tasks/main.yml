@@ -1,19 +1,59 @@
 ---
+- name: Allow HTTPS traffic
+  ufw:
+    rule: allow
+    name: Nginx Full
+
+- name: Add Certbot repository
+  apt_repository:
+    repo: ppa:certbot/certbot
+    state: present
+
+- name: Add Nginx stable repository
+  apt_repository:
+    repo: ppa:nginx/stable
+    state: present
+
 - name: Install common required Webserver packages
   apt:
     name: "{{ webserver_common_required_packages }}"
     state: present
 
-- name: Allow HTTPS traffic
-  ufw:
-    rule: allow
-    port: "443"
-    proto: tcp
+- name: Download, install, and load SSL certificates and >
+        add renew script to /etc/cron.d
+  command: certbot -n -m {{ letsencrypt_email }} --nginx --agree-tos -d test.daveottley.com
+  args:
+    creates: /etc/letsencrypt/live/{{ domain_name }}
+  notify: Reload Nginx
+  register: certbot
 
-- name: Allow HTTP traffic
-  ufw:
-    rule: allow
-    port: "80"
-    proto: tcp
+- name: Test certbot auto-renewal
+  command: certbot renew --dry-run
+  ignore_errors: yes
+  when: certbot.changed
 
-- name: Create nginx.conf using template
+- name: Create site.conf in sites-available using template
+  template:
+    src: "{{ domain_name }}.conf.j2"
+    dest: /etc/nginx/sites-available/{{ domain_name }}.conf
+    force: yes
+    owner: root
+    group: root
+    mode: 01777
+  notify: Reload Nginx
+
+- name: Add link to site.conf in sites-enabled
+  file:
+    src: /etc/nginx/sites-available/{{ domain_name }}.conf
+    dest: /etc/nginx/sites-enabled/{{domain_name }}.conf
+    owner: root
+    group: root
+    mode: 01777
+    state: link
+  notify: Reload Nginx
+
+- name: Remove default site configuration
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
