@@ -1,23 +1,37 @@
 ---
-- name: Allow HTTPS traffic
-  ufw:
-    rule: allow
-    name: Nginx Full
+- name: Add Nginx stable repository
+  apt_repository:
+    repo: ppa:nginx/stable
+    state: present
 
 - name: Add Certbot repository
   apt_repository:
     repo: ppa:certbot/certbot
     state: present
 
-- name: Add Nginx stable repository
-  apt_repository:
-    repo: ppa:nginx/stable
-    state: present
-
 - name: Install common required Webserver packages
   apt:
     name: "{{ webserver_common_required_packages }}"
     state: present
+
+- name: Remove stray HTTP rule
+  ufw:
+    rule: allow
+    port: 80
+    proto: tcp
+    delete: yes
+
+- name: Remove stray HTTPS rule
+  ufw:
+    rule: allow
+    port: 443
+    proto: tcp
+    delete: yes
+
+- name: Allow 'Nginx Full' ufw profile
+  ufw:
+    rule: allow
+    name: Nginx Full
 
 - name: Download, install, and load SSL certificates and >
         add renew script to /etc/cron.d
@@ -32,7 +46,7 @@
   ignore_errors: yes
   when: certbot.changed
 
-- name: Create site.conf in sites-available using template
+- name: Create {{ domain_name }}.conf in sites-available using template
   template:
     src: "{{ domain_name }}.conf.j2"
     dest: /etc/nginx/sites-available/{{ domain_name }}.conf
@@ -42,7 +56,7 @@
     mode: 01777
   notify: Reload Nginx
 
-- name: Add link to site.conf in sites-enabled
+- name: Add link to {{ domain_name }}.conf in sites-enabled
   file:
     src: /etc/nginx/sites-available/{{ domain_name }}.conf
     dest: /etc/nginx/sites-enabled/{{domain_name }}.conf
@@ -57,3 +71,12 @@
     path: /etc/nginx/sites-enabled/default
     state: absent
   notify: Reload Nginx
+
+- name: Load static files for serving by NGinx
+  copy:
+    src: files/index.html
+    dest: /var/www/html/index.html
+    owner: root
+    group: root
+    mode: 0644
+    

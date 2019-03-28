@@ -4,4 +4,12 @@ appserver_common_required_packages:
   - git
   - postgresql-client
   - libpq5
+  - python3.7-venv
+
+venv_directory: /opt/website-venv
+app_name: websockets_server
+app_directory: /home/{{ ubuntu_common_deploy_user_name }}/website/websockets_server
+websockets_port: 6789
+ip_address: 45.79.10.134
+
 ...

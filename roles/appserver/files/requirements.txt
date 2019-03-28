@@ -1,0 +1,2 @@
+#nothing yet
+websockets>=7.0

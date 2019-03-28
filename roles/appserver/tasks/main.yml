@@ -3,3 +3,49 @@
   apt: 
     name: "{{ appserver_common_required_packages }}"
     state: present
+
+- name: Ensure directory structure
+  file:
+    path: "{{ app_directory }}"
+    state: directory
+    owner: deployer
+    group: deployers
+
+- name: Copy requirements file
+  copy:
+    src: requirements.txt
+    dest: "{{ app_directory }}/requirements.txt"
+    owner: deployer
+    group: deployers
+    mode: 0644
+
+- name: Install python requirements
+  pip:
+    requirements: "{{ app_directory }}/requirements.txt"
+    virtualenv: "{{ venv_directory }}"
+    virtualenv_command: /usr/bin/python3.7 -m venv
+
+- name: Install websocket server application
+  template:
+    src: server.py.j2
+    dest: "{{ app_directory }}/server.py"
+    owner: deployer
+    group: deployers
+    mode: 0755
+  notify: Restart appserver
+
+- name: Edit supervisord configuration to manage our application
+  template:
+    src: websockets_server.conf.j2
+    dest: /etc/supervisor/conf.d/websockets_server.conf
+    owner: deployer
+    group: deployers
+    mode: 0755
+  notify: Restart supervisord
+
+- name: Allow websockets traffic on port {{ websockets_port }}
+  ufw:
+    rule: allow
+    port: "{{ websockets_port }}"
+    proto: tcp
+...

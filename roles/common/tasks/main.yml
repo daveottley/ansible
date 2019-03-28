@@ -110,15 +110,19 @@
     policy: deny
     direction: incoming
 
-- name: Allow SSH traffic
+- name: Set ufw logging
   ufw:
-    rule: allow
+    logging: on
+
+- name: Allow limited SSH traffic to port {{ ubuntu_common_ssh_port }}
+  ufw:
+    rule: limit
     port: "{{ ubuntu_common_ssh_port }}"
     proto: tcp
 
-- name: Allow mosh traffic
+- name: Allow limited mosh traffic between ports {{ ubuntu_common_mosh_from_port }} and {{ ubuntu_common_mosh_to_port }}
   ufw:
-    rule: allow
+    rule: limit
     port: "{{ ubuntu_common_mosh_from_port }}:{{ ubuntu_common_mosh_to_port }}"
     proto: udp
   when: "'mosh' in ubuntu_common_optional_packages"

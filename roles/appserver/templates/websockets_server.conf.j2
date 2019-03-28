@@ -1,0 +1,7 @@
+[program:{{ app_name }}]
+directory={{ app_directory }}
+command={{ venv_directory }}/bin/python server.py
+stderr_logfile=/var/log/{{ app_name }}.error
+stdout_logfile=/var/log/{{ app_name }}.log
+autostart=true
+autorestart=true

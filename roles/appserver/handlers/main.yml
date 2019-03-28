@@ -1,0 +1,11 @@
+---
+- name: Restart supervisord
+  service:
+    name: supervisor
+    state: restarted
+
+- name: Restart appserver
+  supervisorctl:
+    name: "{{ app_name }}"
+    state: restarted
+...

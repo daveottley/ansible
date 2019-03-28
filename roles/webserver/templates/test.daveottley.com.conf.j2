@@ -34,13 +34,13 @@ server {
 
         location / {
                 root /var/www/html;
-                index index.nginx-debian.html;
+                index index.html;
                 #include proxy_params;
                 #proxy_pass http://unix:/run/gunicorn.sock;
         }
 
         location /static/ {
-                root /home/dave/website;
+                root /home/{{ ubuntu_common_deploy_user_name }}/website/static;
         }
 
         location /socket.io {
