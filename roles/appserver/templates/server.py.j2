@@ -4,7 +4,15 @@ import logging
 import websockets
 import ssl
 
-logging.basicConfig()
+from datetime import datetime
+
+logging.basicConfig(filename='/var/log/{{ app_name }}.log', level='WARNING')
+
+logger = logging.getLogger('websockets.server')
+logger.setLevel(logging.ERROR)
+logger.addHandler(logging.FileHandler('/var/log/{{ app_name }}.websockets.error'))
+
+MIN_MESSAGE_BURST_SPACING = 500000 # in microseconds
 
 STATE = {'value': 0}
 
@@ -38,7 +46,22 @@ async def counter(websocket, path):
     await register(websocket)
     try:
         await websocket.send(state_event())
+
+        subscript = 0
+        time_zero = datetime.now()
+
         async for message in websocket:
+            subscript += 1
+            
+            if subscript == 5:  
+                subscript = 0
+                time_now = datetime.now()
+                td = time_now - time_zero
+                logging.warning(f'td.days={td.days},td.seconds={td.seconds},td.microseconds={td.microseconds}')
+                if td.days == 0 and td.seconds == 0 and td.microseconds < MIN_MESSAGE_BURST_SPACING:
+                    raise Exception('Bot detected')
+                time_zero = datetime.now()
+            
             data = json.loads(message)
             if data['action'] == 'minus':
                 STATE['value'] -= 1

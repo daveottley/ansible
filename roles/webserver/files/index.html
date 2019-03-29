@@ -39,24 +39,51 @@
             .state {
                 font-size: 2em;
             }
+            .subtext {
+                font-size: .2em;
+            }
     </style>
 </head>
 <body>
     <div class="buttons">
         <div class="minus button">-</div>
-        <div class="value">?</div>
+        <div class="value">
+            <div class='number'>?</div>
+            <div class='subtext'></div>
+        </div>
         <div class="plus button">+</div>
     </div>
+
     <div class="state">
         <span class="users">?</span> online
     </div>
 
     <script>
+        //  Always have sleep(ms) available for debug/testing purposes.
+        //
+        //                    ...  WARNING! ...
+        //
+        //  The calling function MUST be declared in the following format:
+        //
+        //      async function foo() {
+        //          console.log('Taking a break...');
+        //          await sleep(2000);
+        //          console.log('Two seconds later');
+        //      }
+        //  
+        //      foo();
+        //
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
         var minus = document.querySelector('.minus'),
             plus = document.querySelector('.plus'),
-            value = document.querySelector('.value'),
+            number = document.querySelector('.number'),
+            subtext = document.querySelector('.subtext'),
             users  = document.querySelector('.users'),
             websocket = new WebSocket('wss://test.daveottley.com:6789');
+
         minus.onclick = function (event) {
             websocket.send(JSON.stringify({action: 'minus'}));
         }
@@ -67,7 +94,14 @@
             data = JSON.parse(event.data);
             switch (data.type) {
                 case 'state':
-                    value.textContent = data.value;
+                    if (data.value == 0) {
+                        number.textContent = data.value;
+                        subtext.textContent = 'The Universe is in balance.'
+                    }
+                    else {
+                        number.textContent = data.value;
+                        subtext.textContent = 'OUT OF BALANCE. Rectify!'
+                    }
                     break;
                 case 'users':
                     users.textContent = (
